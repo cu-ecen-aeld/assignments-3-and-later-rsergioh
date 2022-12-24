@@ -1,3 +1,12 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <syslog.h>
+#include <sys/wait.h>
+#include <errno.h>
 #include "systemcalls.h"
 
 /**
@@ -17,7 +26,22 @@ bool do_system(const char *cmd)
  *   or false() if it returned a failure
 */
 
-    return true;
+	bool retvalue = false;
+	int ret = 0;
+	
+	ret = system(cmd);
+	
+	if (ret > 0)
+	{
+		retvalue = true;
+	}
+	else
+	{
+		retvalue = false;
+	}
+	
+
+    return retvalue;
 }
 
 /**
@@ -40,14 +64,22 @@ bool do_exec(int count, ...)
     va_start(args, count);
     char * command[count+1];
     int i;
+    
+    pid_t pid = 0;
+    int wait_ret = 0;
+    int wait_status = 0;
+    bool retvalue = true;
+    
+    
     for(i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
     }
+    va_end(args);
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
+    //command[count] = command[count];
 
 /*
  * TODO:
@@ -58,10 +90,43 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
+	pid = fork();
+	if (pid == -1)
+	{
+		perror("fork");
+		retvalue = false;
+	}
+	else if (pid == 0)
+	{
+		execv(command[0], (char *const *)command);
+		exit(-1);
+	}
+	else
+	{
+		// Parent process do nothing
+	}
+	
+	wait_ret = waitpid(pid, &wait_status, 0);
+	if (wait_ret == -1)
+	{
+		perror("wait");
+		retvalue = false;
+	}
+	else if (WIFEXITED(wait_status))
+	{
+		printf("exit status %d\n", WEXITSTATUS(wait_status));
+		if (WEXITSTATUS(wait_status) > 0)
+		{
+			printf("Command failed\n");
+			retvalue = false;
+		}
+	}
+	else
+	{
+		printf("Unexpected exit status %d\n",WEXITSTATUS(wait_status));
+	}
 
-    va_end(args);
-
-    return true;
+    return retvalue;
 }
 
 /**
@@ -75,6 +140,13 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     va_start(args, count);
     char * command[count+1];
     int i;
+        
+    pid_t pid = 0;
+    int wait_ret = 0;
+    int wait_status = 0;
+    bool retvalue = true;
+    int temp_fd = 0;
+    
     for(i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
@@ -82,8 +154,9 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
+    //command[count] = command[count];
 
+    va_end(args);
 
 /*
  * TODO
@@ -92,8 +165,58 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
-
-    va_end(args);
-
-    return true;
+	temp_fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+	if (temp_fd < 0)
+	{
+		perror("open");
+		retvalue = false;
+	}
+	else
+	{
+		pid = fork();
+		if (pid == -1)
+		{
+			perror("fork");
+			retvalue = false;
+		}
+		else if (pid == 0)
+		{
+			if (dup2(temp_fd, 1) < 0)
+			{
+				perror("dup2");
+				retvalue = false;
+			}
+			else
+			{
+				close(temp_fd);
+				execv(command[0], (char *const *)command);
+				exit(-1);
+			}
+		}
+		else
+		{
+			//Parent process do nothing
+		}
+		
+		wait_ret = waitpid(pid, &wait_status, 0);
+		if (wait_ret == -1)
+		{
+			perror("wait");
+			retvalue = false;
+		}
+		else if (WIFEXITED(wait_status))
+		{
+			if (WEXITSTATUS(wait_status) > 0)
+			{
+				printf("Command failed\n");
+				retvalue = false;
+			}
+		}
+		else
+		{
+			printf("Unexpected exit status %d\n",WEXITSTATUS(wait_status));
+		}
+	}
+	
+    return retvalue;
 }
