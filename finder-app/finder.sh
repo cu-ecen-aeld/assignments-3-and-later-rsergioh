@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Check that two arguments were given
 if [ ! $# -eq 2 ]
